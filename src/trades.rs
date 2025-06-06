@@ -1,5 +1,4 @@
 use crate::events::{BuyEvent, SellEvent};
-use crate::pool::PoolCache;
 use anchor_lang::AnchorDeserialize;
 use anchor_lang::Discriminator;
 use anchor_lang::prelude::Pubkey;
@@ -10,7 +9,6 @@ use solana_sdk::clock::UnixTimestamp;
 use tracing::{error, info, warn};
 
 pub struct PumpDeserialize {
-    cache: PoolCache,
 }
 
 #[derive(Row, Clone, Debug, Serialize, Deserialize)]
@@ -27,7 +25,6 @@ pub struct Trade {
 impl PumpDeserialize {
     pub fn new() -> Self {
         Self {
-            cache: PoolCache::new(),
         }
     }
     pub fn deserialize_pump(&mut self, data: &mut &[u8], tx_hash: &String, log_index: usize) -> Result<Option<Trade>> {
@@ -40,7 +37,6 @@ impl PumpDeserialize {
                 let buy_data = BuyEvent::deserialize(data)?;
                 let buy = self.process_buy(&buy_data, tx_hash, log_index)?;
                 Some(buy)
-
             }
             SellEvent::DISCRIMINATOR => {
                 let sell_data = SellEvent::deserialize(data)?;
@@ -54,7 +50,6 @@ impl PumpDeserialize {
     }
 
     pub fn process_buy(&mut self, data: &BuyEvent, tx_hash: &String, index: usize) -> Result<Trade> {
-        // let pool = self.cache.get_pool_info(&data.pool)?;
         Ok(Trade {
             amount_sol: data.quote_amount_in,
             is_sell: false,

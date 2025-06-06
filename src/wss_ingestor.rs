@@ -14,7 +14,6 @@ pub struct WssIngestor {
     deserializer: PumpDeserialize,
     out_channel: UnboundedSender<Trade>,
     log_subscription: LogsSubscription,
-    // receiver: Receiver<solana_client::rpc_response::Response<solana_client::rpc_response::RpcLogsResponse>>,
 }
 
 impl WssIngestor {
@@ -57,6 +56,7 @@ impl WssIngestor {
                                     .deserializer
                                     .deserialize_pump(data_slice, &tx_hash, log_index)
                                 {
+                                    info!("Correctly producedtrade {:?}", tx_hash);
                                     maybe_trade.map(|trade| {
                                         if let Err(e) = self.out_channel.send(trade) {
                                             error!("Failure in sending trade {:?} to db", tx_hash);
