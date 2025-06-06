@@ -4,44 +4,44 @@ use clickhouse::Client;
 use clickhouse::sql::Bind;
 use std::fs;
 use tokio::sync::mpsc::UnboundedReceiver;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub struct BackendDb {
     dbClient: Client,
-    input_channel: UnboundedReceiver<Trade>
 }
 
 impl BackendDb {
-    pub fn new(url: &str, rx: UnboundedReceiver<Trade>) -> Self {
+    pub fn new(url: &str) -> Self {
         let client = Client::default()
             .with_url(url)
             .with_user("bonk")
             // .with_password("")
             .with_database("pump_swap_data");
 
-        Self { dbClient: client, input_channel: rx }
+        Self { dbClient: client }
     }
 
-    pub async fn store_trades(&mut self) {
-        while let Some(trade) = self.input_channel.recv().await {
+    pub async fn store_trades(&mut self, mut rx: UnboundedReceiver<Trade>) {
+        while let Some(trade) = rx.recv().await {
             match self.upsert_trade(&trade).await {
                 Ok(()) => {
-                    error!("inserted trade at tx hash {:?} and log index {:?}", trade.tx_hash, trade.log_index)
+                    info!("inserted trade at tx hash {:?} and log index {:?}", trade.tx_hash, trade.log_index)
                 }
                 Err(e) => {
-                    error!("error inserting trade at tx hash {:?} and log index {:?}", trade.tx_hash, trade.log_index)
+                    error!("error inserting trade error {:?}", e.to_string())
                 }
             }
-
         }
+        warn!("📨 Trade receiver channel closed - no more trades will be processed");
 
     }
 
     // update or insert
     pub async fn upsert_trade(&self, trade: &Trade) -> Result<()> {
         let mut trades_handle = self.dbClient.insert("trades")?;
-        trades_handle.write(trade).await;
+        trades_handle.write(trade).await?;
         trades_handle.end().await?;
+        info!("✅ trade inserted into db tx hash {:?} log index {:?}", &trade.tx_hash, &trade.log_index);
         Ok(())
     }
 
