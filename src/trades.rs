@@ -4,22 +4,24 @@ use anchor_lang::AnchorDeserialize;
 use anchor_lang::Discriminator;
 use anchor_lang::prelude::Pubkey;
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use clickhouse::Row;
 use solana_sdk::clock::UnixTimestamp;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 pub struct PumpDeserialize {
     cache: PoolCache,
 }
 
-#[derive(Clone, Debug)]
-struct Trade {
-    input_token: Pubkey,
-    output_token: Pubkey,
-    amount_in: u64,
-    amount_out: u64,
-    is_sell: bool,
-    user: Pubkey,
-    timestamp: UnixTimestamp,
+#[derive(Row, Clone, Debug, Serialize, Deserialize)]
+pub struct Trade {
+    pub amount_sol: u64,
+    pub is_sell: bool,
+    pub user: String,
+    pub timestamp: UnixTimestamp,
+    pub tx_hash: String,
+    pub log_index: usize,
+    pub pool: String,
 }
 
 impl PumpDeserialize {
@@ -28,51 +30,51 @@ impl PumpDeserialize {
             cache: PoolCache::new(),
         }
     }
-    pub fn deserialize_pump(&mut self, data: &mut &[u8]) -> Result<()> {
+    pub fn deserialize_pump(&mut self, data: &mut &[u8], tx_hash: &String, log_index: usize) -> Result<Option<Trade>> {
         if data.len() < 8 {
             tracing::error!("discriminator too short");
         }
         let discriminator = &data[..8];
-        match discriminator {
+        let trade = match discriminator {
             BuyEvent::DISCRIMINATOR => {
                 let buy_data = BuyEvent::deserialize(data)?;
-                warn!("Buy event found {:?}", buy_data);
-                let buy = self.process_buy(&buy_data)?;
+                let buy = self.process_buy(&buy_data, tx_hash, log_index)?;
+                Some(buy)
+
             }
             SellEvent::DISCRIMINATOR => {
                 let sell_data = SellEvent::deserialize(data)?;
-                warn!("Sell event found {:?}", sell_data);
-                let sell = self.process_sell(&sell_data)?;
+                let sell = self.process_sell(&sell_data, tx_hash, log_index)?;
+                Some(sell)
             }
-            _ => {}
-        }
+            _ =>  None
+        };
 
-        Ok(())
+        Ok(trade)
     }
 
-    pub fn process_buy(&mut self, data: &BuyEvent) -> Result<Trade> {
-        let pool = self.cache.get_pool_info(&data.pool)?;
+    pub fn process_buy(&mut self, data: &BuyEvent, tx_hash: &String, index: usize) -> Result<Trade> {
+        // let pool = self.cache.get_pool_info(&data.pool)?;
         Ok(Trade {
-            input_token: pool.quote_token,
-            output_token: pool.base_token,
-            amount_in: data.quote_amount_in,
-            amount_out: data.base_amount_out,
+            amount_sol: data.quote_amount_in,
             is_sell: false,
             timestamp: UnixTimestamp::from(data.timestamp),
-            user: data.user,
+            user: data.user.to_string(),
+            tx_hash: tx_hash.to_owned(),
+            log_index: index,
+            pool: data.pool.to_string(),
         })
     }
 
-    pub fn process_sell(&mut self, data: &SellEvent) -> Result<Trade> {
-        let pool = self.cache.get_pool_info(&data.pool)?;
+    pub fn process_sell(&mut self, data: &SellEvent, tx_hash: &String, index: usize) -> Result<Trade> {
         Ok(Trade {
-            input_token: pool.base_token,
-            output_token: pool.quote_token,
-            amount_in: data.base_amount_in,
-            amount_out: data.quote_amount_out,
+            amount_sol: data.quote_amount_out,
             is_sell: true,
             timestamp: UnixTimestamp::from(data.timestamp),
-            user: data.user,
+            user: data.user.to_string(),
+            tx_hash: tx_hash.to_owned(),
+            log_index: index,
+            pool: data.pool.to_string(),
         })
     }
 }
