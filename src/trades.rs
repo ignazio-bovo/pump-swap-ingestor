@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use clickhouse::Row;
 use solana_sdk::bs58;
 use solana_sdk::clock::UnixTimestamp;
+use solana_sdk::pubkey::Pubkey;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
@@ -16,6 +17,8 @@ pub struct PumpProcessor {
     sol_price_usd: Arc<RwLock<f64>>, // Arc needed for cloning pourposes
     client: reqwest::Client,
     solana_price_url: &'static str,
+    solana_program_id: Pubkey,
+
 }
 
 #[derive(Row, Clone, Debug, Serialize, Deserialize)]
@@ -37,7 +40,8 @@ impl PumpProcessor {
         let self_ = Self {
             client: reqwest::Client::new(),
             solana_price_url: "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
-            sol_price_usd: Arc::new(RwLock::new(0.0))
+            sol_price_usd: Arc::new(RwLock::new(0.0)),
+            solana_program_id: Pubkey::from_str_const("11111111111111111111111111111111"),
         };
         self_.fetch_sol_price().await.expect("Error in fetching initial sol/usd price");
         self_
@@ -69,7 +73,7 @@ impl PumpProcessor {
     }
 
     pub async fn process_buy(&mut self, data: &BuyEvent, tx_hash: &String, index: usize) -> Result<Trade> {
-        let amount_lamport = data.user_quote_amount_in;
+        let amount_lamport = self.lamport_for_buy(data);
         let amount_usd = self.lamport_to_usd(amount_lamport).await;
         let user = data.user.to_string();
         let fees = data.lp_fee + data.coin_creator_fee + data.protocol_fee;
@@ -89,7 +93,7 @@ impl PumpProcessor {
     }
 
     pub async fn process_sell(&mut self, data: &SellEvent, tx_hash: &String, index: usize) -> Result<Trade> {
-        let amount_lamport = data.user_quote_amount_out;
+        let amount_lamport = self.lamport_for_sell(data);
         let amount_usd = self.lamport_to_usd(amount_lamport).await;
         let user = data.user.to_string();
         let fees = data.lp_fee + data.coin_creator_fee + data.protocol_fee;
@@ -123,6 +127,22 @@ impl PumpProcessor {
     // Helper function to get current SOL price
     pub async fn get_sol_usd_price(&self) -> f64 {
         *self.sol_price_usd.read().await
+    }
+
+    fn lamport_for_buy(&self, buy_event: &BuyEvent) -> u64 {
+        if buy_event.coin_creator == self.solana_program_id {
+            buy_event.base_amount_out
+        } else {
+            buy_event.quote_amount_in
+        }
+    }
+
+    fn lamport_for_sell(&self, sell_event: &SellEvent) -> u64 {
+        if sell_event.coin_creator == self.solana_program_id {
+            sell_event.base_amount_in
+        } else {
+            sell_event.quote_amount_out
+        }
     }
 
     async fn lamport_to_usd(&self, amount_lamport: u64) -> f64 {

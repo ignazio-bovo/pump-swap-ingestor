@@ -6,7 +6,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{error, info, warn};
 
 pub struct BackendDb {
-    dbClient: Client,
+    db_client: Client,
 }
 
 impl BackendDb {
@@ -17,7 +17,7 @@ impl BackendDb {
             // .with_password("")
             .with_database("pump_swap_data");
 
-        Self { dbClient: client }
+        Self { db_client: client }
     }
 
     pub async fn store_trades(&self, mut rx: UnboundedReceiver<Trade>) {
@@ -34,7 +34,7 @@ impl BackendDb {
 
     // update or insert
     pub async fn upsert_trade(&self, trade: &Trade) -> Result<()> {
-        let mut trades_handle = self.dbClient.insert("trades")?;
+        let mut trades_handle = self.db_client.insert("trades")?;
         trades_handle.write(trade).await?;
         trades_handle.end().await?;
         Ok(())
@@ -43,7 +43,7 @@ impl BackendDb {
     pub async fn needs_migration(&self) -> Result<bool> {
         let query = "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'trades'";
 
-        let result: u64 = self.dbClient.query(query).fetch_one().await?;
+        let result: u64 = self.db_client.query(query).fetch_one().await?;
 
         Ok(result == 0)
     }
@@ -57,7 +57,7 @@ impl BackendDb {
             .await
             .expect("Unable to establish if migrations are neeedd");
         if migration_should_be_run {
-            self.dbClient
+            self.db_client
                 .query(&migration_sql)
                 .execute()
                 .await
