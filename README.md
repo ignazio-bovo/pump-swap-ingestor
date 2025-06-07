@@ -1,43 +1,48 @@
 # Demo for Data Ingestion from Pump-Swap DEX
-This system consists of three main components that work together to capture and store real-time trading data from the pump-swap decentralized exchange:
 
-## Source
-Data is derived by the logs from the pump swap program, this ensures that the actual trade on pump and swap has been executed successfully
+This system captures and stores real-time trading data from the pump-swap decentralized exchange using three main components:
+
+## Instructions
+[Docker](https://docs.docker.com/get-started/get-docker/) and Docker compose required
+
+Start the ingestor
+```shell
+docker compose up -d
+```
+Stop the ingestor
+```shell
+docker compose down -v
+```
+
+##  Source
+Extracts trade data from pump-swap program logs, ensuring only successfully executed trades are captured.
+Usd amount for trade can be computed by considering only the SOL amount and then fetching the actual price
 
 ## Ingestor
+Connects to Solana's WebSocket endpoint for real-time transaction streaming:
+- **WebSocket Connection**: Subscribes to `logsSubscribe` for raw transaction data
+- **Non-blocking Architecture**: Uses unbounded channels for component synchronization
+- **Real-time Processing**: Continuous data streaming without blocking operations
 
-The ingestor connects to Solana's public WebSocket endpoint to receive raw transaction data in real-time. Key features:
+## Processor
+Handles data transformation and preparation:
+- **IDL-based Deserialization**: Parses raw transaction data using pump-swap IDL
+- **Data Model Preparation**: Converts blockchain data to structured database format
 
-- **WebSocket Connection**: Subscribes to Solana's `logsSubscribe` method to receive raw byte payloads
-- **Non-blocking Architecture**: Uses unbounded channels for synchronization between components
-- **Real-time Processing**: Streams transaction data continuously without blocking operations
+### SOL Price Feed Subservice
+- **Price Updates**: Fetches SOL/USD rates every 20 seconds
+- **Thread-safe Sync**: Uses `RwLock` for concurrent access
+- **Real-time Valuation**: Enables USD calculations for all trades
 
-## Deserializer / Processor
-
-The processor handles data transformation and preparation for storage:
-
-- **IDL-based Deserialization**: Uses the pump-swap IDL (Interface Description Language) to parse raw transaction data
-- **Data Model Preparation**: Converts raw blockchain data into structured format suitable for database storage
-
-### SOL Price Feed Subcomponent
-
-A dedicated task manages USD pricing data:
-
-- **Price Updates**: Fetches current SOL/USD exchange rates every 20 seconds
-- **Thread-safe Synchronization**: Uses `RwLock` for safe concurrent access between processor and price feed tasks
-- **Real-time Valuation**: Enables USD value calculation for all trades
+### Pool Cache 
+Fetches pool information (`quote_mint`, `base_mint`) via RPC on cache miss to determine base and quote mint information
 
 ## ClickHouse Backend
-
-Handles data persistence and querying:
-
-- **Docker Integration**: Connects to containerized ClickHouse instance
-- **Web Interface**: Query playground available at `http://localhost:8123/play`
-- **Channel-based Input**: Receives structured data from the ingestor via synchronization channels
+- **Docker Integration**: Containerized ClickHouse instance
+- **Web Interface**: Query playground at `http://localhost:8123/play`
+- **Channel-based Input**: Receives data via synchronization channels
 
 ### Data Model
-
-The system uses a simplified schema designed for trading analytics:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -45,33 +50,33 @@ The system uses a simplified schema designed for trading analytics:
 | `amount_usd` | Float64 | Trade value in USD |
 | `is_sell` | UInt8 | Trade direction (0=buy, 1=sell) |
 | `user` | String | Trader's wallet address |
-| `timestamp` | DateTime | Transaction timestamp |
+| `timestamp_unix` | UInt64 | Unix timestamp of transaction |
+| `timestamp` | DateTime | Human-readable timestamp (materialized) |
 | `tx_hash` | String | Unique transaction identifier |
 | `log_index` | UInt64 | Position within transaction logs |
 | `pool` | String | Trading pool identifier |
 | `fees` | UInt64 | Transaction fees in lamports |
 | `fees_usd` | Float64 | Transaction fees in USD |
+| `quote_mint` | String | Quote token mint address |
+| `base_mint` | String | Base token mint address |
+| `quote_amount` | UInt64 | Raw quote token amount traded |
+| `base_amount` | UInt64 | Raw base token amount traded |
 
-This architecture enables real-time capture, processing, and analysis of pump-swap trading activity with minimal latency and high reliability.
+## Analytics Queries
 
-## Queries
-
-### Basic PNL
+### Basic PnL by User
 ```clickhouse
 SELECT 
-    user,
-    SUM(CASE 
-        WHEN is_sell = 1 THEN amount_usd 
-        ELSE -amount_usd 
-    END) - SUM(fees_usd) AS realized_pnl,
-    COUNT(*) as total_trades,
-    SUM(CASE WHEN is_sell = 1 THEN 1 ELSE 0 END) as sells,
-    SUM(CASE WHEN is_sell = 0 THEN 1 ELSE 0 END) as buys
-FROM "pump_swap_data"."trades" 
+   user,
+   SUM(CASE WHEN is_sell = 1 THEN amount_usd ELSE -amount_usd END) - SUM(fees_usd) AS realized_pnl,
+   COUNT(*) as total_trades,
+   countIf(is_sell = 1) as sells,
+   countIf(is_sell = 0) as buys
+FROM "pump_swap_data"."trades"
 GROUP BY user
 ORDER BY realized_pnl DESC;
 ```
-### Cumulative Time series for pnl for a specific account
+### Cumulative PNL time series given account
 ```clickhouse
 WITH realized_pnl AS ( -- as before
     SELECT 
@@ -92,7 +97,3 @@ SELECT
 FROM realized_pnl
 ORDER BY timestamp_unix;
 ```
-
-## Further Improvements
-- The pool information is not directly available from the events so it must be fetched separately
-- In case it's necessary the logs can be processed in parallel for further speed

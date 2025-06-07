@@ -1,24 +1,22 @@
-use crate::events::{BuyEvent, SellEvent};
+use crate::idl::{BuyEvent, SellEvent, BUY_EVENT_DISCRIMINATOR, SELL_EVENT_DISCRIMINATOR};
 use crate::pool::{PoolCache, PoolInfo};
 use anchor_lang::AnchorDeserialize;
-use anchor_lang::Discriminator;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use clickhouse::Row;
 use serde::{Deserialize, Serialize};
-use solana_sdk::bs58;
 use solana_sdk::clock::UnixTimestamp;
 use solana_sdk::pubkey::Pubkey;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::error;
 
 #[derive(Clone)]
 pub struct PumpProcessor {
     sol_price_usd: Arc<RwLock<f64>>, // Arc needed for cloning pourposes
     client: reqwest::Client,
     solana_price_url: &'static str,
-    solana_program_id: Pubkey,
+    sol_mint: Pubkey,
     pool_cache: Arc<PoolCache>,
 }
 
@@ -34,8 +32,8 @@ pub struct Trade {
     pub pool: String,
     pub fees: u64,
     pub fees_usd: f64,
-    pub quote_token: String,
-    pub base_token: String,
+    pub quote_mint: String,
+    pub base_mint: String,
     pub quote_amount: u64,
     pub base_amount: u64,
 }
@@ -46,7 +44,7 @@ impl PumpProcessor {
             client: reqwest::Client::new(),
             solana_price_url: "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
             sol_price_usd: Arc::new(RwLock::new(0.0)),
-            solana_program_id: Pubkey::from_str_const("11111111111111111111111111111111"),
+            sol_mint: Pubkey::from_str_const("So11111111111111111111111111111111111111112"),
             pool_cache: Arc::new(PoolCache::new()),
         };
         self_
@@ -65,16 +63,17 @@ impl PumpProcessor {
         if data.len() < 8 {
             error!("discriminator too short");
         }
-        let discriminator = &data[..8];
+        let discriminator: [u8; 8] = data[..8].try_into()?;
+
         let data_to_deserialize = &mut &data[8..];
         let trade = match discriminator {
-            BuyEvent::DISCRIMINATOR => {
+            BUY_EVENT_DISCRIMINATOR  => {
                 let buy_data = BuyEvent::deserialize(data_to_deserialize)?;
                 // info!("Buy Data \n {:?}", &buy_data);
                 let buy = self.process_buy(&buy_data, tx_hash, log_index).await?;
                 Some(buy)
             }
-            SellEvent::DISCRIMINATOR => {
+            SELL_EVENT_DISCRIMINATOR => {
                 let sell_data = SellEvent::deserialize(data_to_deserialize)?;
                 // info!("Sell Data \n {:?}", &sell_data);
                 let sell = self.process_sell(&sell_data, tx_hash, log_index).await?;
@@ -109,8 +108,8 @@ impl PumpProcessor {
             amount_usd,
             fees,
             fees_usd,
-            quote_token: pool_info.quote_token.to_string(),
-            base_token: pool_info.base_token.to_string(),
+            quote_mint: pool_info.quote_mint.to_string(),
+            base_mint: pool_info.base_mint.to_string(),
             quote_amount: data.quote_amount_in,
             base_amount: data.base_amount_out,
         })
@@ -139,8 +138,8 @@ impl PumpProcessor {
             amount_usd,
             fees,
             fees_usd,
-            quote_token: pool_info.quote_token.to_string(),
-            base_token: pool_info.base_token.to_string(),
+            quote_mint: pool_info.quote_mint.to_string(),
+            base_mint: pool_info.base_mint.to_string(),
             quote_amount: data.quote_amount_out,
             base_amount: data.base_amount_in,
         })
@@ -169,7 +168,7 @@ impl PumpProcessor {
     }
 
     async fn lamport_for_buy(&self, event: &BuyEvent, info: &PoolInfo) -> u64 {
-        if info.quote_token == self.solana_program_id {
+        if info.quote_mint == self.sol_mint {
             event.quote_amount_in
         } else {
             event.base_amount_out
@@ -177,7 +176,7 @@ impl PumpProcessor {
     }
 
     async fn lamport_for_sell(&self, event: &SellEvent, info: &PoolInfo) -> u64 {
-        if info.quote_token == self.solana_program_id {
+        if info.quote_mint == self.sol_mint {
             event.quote_amount_out
         } else {
             event.base_amount_in

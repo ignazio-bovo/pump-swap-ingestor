@@ -11,8 +11,8 @@ CREATE TABLE IF NOT EXISTS trades
     pool           String,
     fees           UInt64,
     fees_usd       Float64,
-    quote_token    String,
-    base_token     String,
+    quote_mint    String,
+    base_mint     String,
     quote_amount   UInt64,
     base_amount    UInt64
 ) ENGINE = ReplacingMergeTree()

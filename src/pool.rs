@@ -1,17 +1,17 @@
-use crate::trades::Trade;
+use anyhow::{anyhow, Result};
+use crate::idl::Pool;
 use anchor_lang::AnchorDeserialize;
-use anchor_lang::prelude::Pubkey;
-use anyhow::{Result, anyhow};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc::UnboundedReceiver};
-use tracing::{error, info, warn};
+use solana_sdk::pubkey::Pubkey;
+use tokio::sync::RwLock;
+use tracing::info;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct PoolInfo {
-    pub base_token: Pubkey,
-    pub quote_token: Pubkey,
+    pub base_mint: Pubkey,
+    pub quote_mint: Pubkey,
 }
 
 pub struct PoolCache {
@@ -52,10 +52,10 @@ impl PoolCache {
 
         let data_slice_to_deserialize = &mut &data_slice[8..];
 
-        let pool = crate::typedefs::Pool::deserialize(data_slice_to_deserialize)?;
+        let pool = Pool::deserialize(data_slice_to_deserialize)?;
         let pool_info = PoolInfo {
-            base_token: pool.base_mint,
-            quote_token: pool.quote_mint,
+            base_mint: pool.base_mint,
+            quote_mint: pool.quote_mint,
         };
 
         // Insert into cache with write lock

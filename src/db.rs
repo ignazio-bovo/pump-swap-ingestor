@@ -14,7 +14,6 @@ impl BackendDb {
         let client = Client::default()
             .with_url(url)
             .with_user("bonk")
-            // .with_password("")
             .with_database("pump_swap_data");
 
         Self { db_client: client }
@@ -40,32 +39,16 @@ impl BackendDb {
         Ok(())
     }
 
-    pub async fn needs_migration(&self) -> Result<bool> {
-        let query = "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'trades'";
-
-        let result: u64 = self.db_client.query(query).fetch_one().await?;
-
-        Ok(result == 0)
-    }
-
     pub async fn run_migrations(&self) {
         let migration_sql =
             fs::read_to_string("migrations/001_trades.sql").expect("Migration file not found");
 
-        let migration_should_be_run = self
-            .needs_migration()
+        self.db_client
+            .query(&migration_sql)
+            .execute()
             .await
-            .expect("Unable to establish if migrations are neeedd");
-        if migration_should_be_run {
-            self.db_client
-                .query(&migration_sql)
-                .execute()
-                .await
-                .expect("Migration setup is necessary for correct setup");
+            .expect("Migration setup is necessary for correct setup");
 
-            info!("Migration completed successfully");
-        }
+        info!("Migration completed successfully");
     }
-
-    pub fn get_trade(&self) {}
 }
