@@ -1,0 +1,27 @@
+[package]
+name = "pump_swap_ingestor"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "pump-swap-ingestor"
+path = "src/main.rs"
+
+[dependencies]
+solana-sdk = "2.2.2"
+anyhow = "1.0.98"
+anchor-gen = "0.4.1"
+anchor-lang = "0.31.1"
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
+base64 = "0.12.3"
+serde_json = "1.0.140"
+clickhouse = "0.13.3"
+serde = "1.0.219"
+tokio = { version = "*", features = ["full"]}
+tokio-tungstenite = { version = "*", features = ["native-tls"] }
+tungstenite = "0.20.1"
+futures-util = "0.3.31"
+reqwest = { version = "0.12.19", features = ["json"] }
+solana-client = "2.2.7"
+
