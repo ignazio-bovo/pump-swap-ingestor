@@ -13,6 +13,10 @@ Stop the ingestor
 ```shell
 docker compose down -v
 ```
+## Exports
+`exports` folder contains exported csv with sample data
+
+# Overview
 
 ##  Source
 Extracts trade data from pump-swap program logs, ensuring only successfully executed trades are captured.
@@ -64,7 +68,7 @@ Fetches pool information (`quote_mint`, `base_mint`) via RPC on cache miss to de
 
 ## Analytics Queries
 
-### Basic PnL by User
+### Realized PnL by User
 ```clickhouse
 SELECT 
    user,
@@ -76,7 +80,7 @@ FROM "pump_swap_data"."trades"
 GROUP BY user
 ORDER BY realized_pnl DESC;
 ```
-### Cumulative PNL time series given account
+### Cumulative Realized PNL time series given account
 ```clickhouse
 WITH realized_pnl AS ( -- as before
     SELECT 
