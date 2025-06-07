@@ -5,6 +5,7 @@ services:
       CLICKHOUSE_DB: pump_swap_data
       CLICKHOUSE_USER: "bonk"
       CLICKHOUSE_PASSWORD: ""  # Empty password
+      CLICKHOUSE_LOG_LEVEL: "debug"  # "trace", "debug", "information", "warning", "error"
     ports:
       - "8123:8123"
       - "9000:9000"
