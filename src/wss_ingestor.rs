@@ -4,7 +4,7 @@ use serde_json::json;
 use crate::trades::{PumpProcessor, Trade};
 use anyhow::Result;
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 pub struct WssIngestor {
     url: String,
@@ -42,6 +42,9 @@ impl WssIngestor {
             error!("error with the wss connection {:?}", e.to_string());
         }
         info!("🚀 Subscribed to logs for {}", self.program_id);
+
+        self.deserializer.price_update_service().await;
+        info!("👷Starting USD price update");
 
         while let Some(message) = ws_receiver.next().await {
             match message? {
@@ -92,7 +95,7 @@ impl WssIngestor {
                                                     error!("Channel closed: {}", e);
                                                     return Err(anyhow::anyhow!("Channel closed"));
                                                 }
-                                                info!("✅ Trade sent for tx: {}", tx_hash);
+                                                debug!("✅ Trade sent for tx: {}", tx_hash);
                                             }
                                         }
                                     }

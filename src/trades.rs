@@ -1,17 +1,18 @@
+use std::sync::Arc;
+use std::time::Duration;
 use crate::events::{BuyEvent, SellEvent};
 use anchor_lang::AnchorDeserialize;
 use anchor_lang::Discriminator;
-use anchor_lang::prelude::Pubkey;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use clickhouse::Row;
-use reqwest::ClientBuilder;
 use solana_sdk::clock::UnixTimestamp;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
+#[derive(Clone)]
 pub struct PumpProcessor {
-    sol_price_usd: RwLock<f64>,
+    sol_price_usd: Arc<RwLock<f64>>, // Arc needed for cloning pourposes
     client: reqwest::Client,
     solana_price_url: &'static str,
 }
@@ -33,11 +34,12 @@ impl PumpProcessor {
         let self_ = Self {
             client: reqwest::Client::new(),
             solana_price_url: "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
-            sol_price_usd: RwLock::new(0.0)
+            sol_price_usd: Arc::new(RwLock::new(0.0))
         };
         self_.fetch_sol_price().await.expect("Error in fetching initial sol/usd price");
         self_
     }
+
     pub async fn deserialize_pump(&mut self, data: &mut &[u8], tx_hash: &String, log_index: usize) -> Result<Option<Trade>> {
         if data.len() < 8 {
             tracing::error!("discriminator too short");
@@ -61,7 +63,7 @@ impl PumpProcessor {
     }
 
     pub async fn process_buy(&mut self, data: &BuyEvent, tx_hash: &String, index: usize) -> Result<Trade> {
-        let amount_lamport = data.quote_amount_in;
+        let amount_lamport = data.base_amount_out;
         let amount_usd = self.lamport_to_usd(amount_lamport).await;
         Ok(Trade {
             amount_lamport,
@@ -76,7 +78,7 @@ impl PumpProcessor {
     }
 
     pub async fn process_sell(&mut self, data: &SellEvent, tx_hash: &String, index: usize) -> Result<Trade> {
-        let amount_lamport = data.quote_amount_out;
+        let amount_lamport = data.base_amount_in;
         let amount_usd = self.lamport_to_usd(amount_lamport).await;
         Ok(Trade {
             amount_lamport,
@@ -108,9 +110,26 @@ impl PumpProcessor {
     }
 
     async fn lamport_to_usd(&self, amount_lamport: u64) -> f64 {
-        let amount_lamport = amount_lamport as f64 / 1e9;
+        let amount_sol = amount_lamport as f64 / 1e9;
         let price_usd_sol = self.get_sol_usd_price().await;
-        amount_lamport * price_usd_sol
+        amount_sol * price_usd_sol
+    }
+
+    pub async fn price_update_service(&self) {
+        let processor = self.clone();
+
+        tokio::spawn(async move {
+            // fetch every 20 seconds
+            let mut interval = tokio::time::interval(Duration::from_secs(20));
+
+            loop {
+                interval.tick().await;
+
+                if let Err(e) = processor.fetch_sol_price().await {
+                    error!("Failed to update SOL price: {}", e);
+                }
+            }
+        });
     }
 }
 

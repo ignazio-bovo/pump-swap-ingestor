@@ -11,6 +11,7 @@ services:
       - "9000:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+#      - ./clickhouse-config:/etc/clickhouse-server/config.d  # Optional custom config
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
       interval: 2s

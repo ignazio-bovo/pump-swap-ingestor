@@ -6,5 +6,5 @@
 - [X] Data understanding (base, quote, lp fees)
 - [X] Data to model format
 - [X] Setup backend DB api and clickhouse image
-- [ ] Setup periodic USD/SOL price fetching for Trade value USD
+- [X] Setup periodic USD/SOL price fetching for Trade value USD
 - [ ] PNL Query 
