@@ -1,7 +1,7 @@
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
-use crate::trades::{PumpDeserialize, Trade};
+use crate::trades::{PumpProcessor, Trade};
 use anyhow::Result;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{error, info};
@@ -9,7 +9,7 @@ use tracing::{error, info};
 pub struct WssIngestor {
     url: String,
     program_id: String,
-    deserializer: PumpDeserialize,
+    deserializer: PumpProcessor,
 }
 
 impl WssIngestor {
@@ -17,7 +17,7 @@ impl WssIngestor {
         Ok(Self {
             url: url.to_string(),
             program_id: program_id.to_string(),
-            deserializer: PumpDeserialize::new(),
+            deserializer: PumpProcessor::new().await,
         })
     }
 
@@ -85,7 +85,7 @@ impl WssIngestor {
                                         let data_slice = &mut raw_data.as_slice();
                                         if let Ok(maybe_trade) = self
                                             .deserializer
-                                            .deserialize_pump(data_slice, &tx_hash, log_index)
+                                            .deserialize_pump(data_slice, &tx_hash, log_index).await
                                         {
                                             if let Some(trade) = maybe_trade {
                                                 if let Err(e) = tx.send(trade) {

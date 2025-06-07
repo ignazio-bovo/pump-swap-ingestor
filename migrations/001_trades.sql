@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS trades (
-                                      amount_sol UInt64,
+                                      amount_lamport UInt64,
+                                      amount_usd Float64,
                                       is_sell UInt8,           -- ClickHouse doesn't have native boolean, use UInt8 (0/1)
                                       user String,
                                       timestamp UInt64,        -- Unix timestamp as UInt64
