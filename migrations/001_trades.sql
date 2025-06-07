@@ -1,13 +1,16 @@
 CREATE TABLE IF NOT EXISTS trades (
                                       amount_lamport UInt64,
                                       amount_usd Float64,
-                                      is_sell UInt8,           -- ClickHouse doesn't have native boolean, use UInt8 (0/1)
+                                      is_sell UInt8,
                                       user String,
-                                      timestamp UInt64,        -- Unix timestamp as UInt64
+                                      timestamp_unix UInt64,
+                                      timestamp DateTime MATERIALIZED toDateTime(timestamp_unix),
                                       tx_hash String,
-                                      log_index UInt64,        -- Changed from usize to UInt64 for consistency
-                                      pool String
-) ENGINE = MergeTree()
-    ORDER BY (timestamp, tx_hash, log_index)  -- Good primary key for time-series data
-    PARTITION BY toYYYYMM(toDateTime(timestamp))  -- Partition by month for better performance
-    SETTINGS index_granularity = 8192;
+                                      log_index UInt64,
+                                      pool String,
+                                      fees UInt64,
+                                      fees_usd Float64
+) ENGINE = ReplacingMergeTree()
+      ORDER BY (tx_hash, log_index)  -- This enforces uniqueness on the combination
+      PARTITION BY toYYYYMM(timestamp)
+      SETTINGS index_granularity = 8192;

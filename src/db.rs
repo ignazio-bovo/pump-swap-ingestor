@@ -1,7 +1,6 @@
 use crate::trades::Trade;
 use anyhow::Result;
 use clickhouse::Client;
-use clickhouse::sql::Bind;
 use std::fs;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{error, info, warn};
@@ -21,7 +20,7 @@ impl BackendDb {
         Self { dbClient: client }
     }
 
-    pub async fn store_trades(&mut self, mut rx: UnboundedReceiver<Trade>) {
+    pub async fn store_trades(&self, mut rx: UnboundedReceiver<Trade>) {
         while let Some(trade) = rx.recv().await {
             match self.upsert_trade(&trade).await {
                 Ok(()) => {}
