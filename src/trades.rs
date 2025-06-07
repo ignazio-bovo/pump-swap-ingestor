@@ -1,14 +1,15 @@
-use std::sync::Arc;
-use std::time::Duration;
 use crate::events::{BuyEvent, SellEvent};
+use crate::pool::{PoolCache, PoolInfo};
 use anchor_lang::AnchorDeserialize;
 use anchor_lang::Discriminator;
-use anyhow::{anyhow, Result};
-use serde::{Deserialize, Serialize};
+use anyhow::{Result, anyhow};
 use clickhouse::Row;
+use serde::{Deserialize, Serialize};
 use solana_sdk::bs58;
 use solana_sdk::clock::UnixTimestamp;
 use solana_sdk::pubkey::Pubkey;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
@@ -18,7 +19,7 @@ pub struct PumpProcessor {
     client: reqwest::Client,
     solana_price_url: &'static str,
     solana_program_id: Pubkey,
-
+    pool_cache: Arc<PoolCache>,
 }
 
 #[derive(Row, Clone, Debug, Serialize, Deserialize)]
@@ -33,6 +34,10 @@ pub struct Trade {
     pub pool: String,
     pub fees: u64,
     pub fees_usd: f64,
+    pub quote_token: String,
+    pub base_token: String,
+    pub quote_amount: u64,
+    pub base_amount: u64,
 }
 
 impl PumpProcessor {
@@ -42,12 +47,21 @@ impl PumpProcessor {
             solana_price_url: "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
             sol_price_usd: Arc::new(RwLock::new(0.0)),
             solana_program_id: Pubkey::from_str_const("11111111111111111111111111111111"),
+            pool_cache: Arc::new(PoolCache::new()),
         };
-        self_.fetch_sol_price().await.expect("Error in fetching initial sol/usd price");
+        self_
+            .fetch_sol_price()
+            .await
+            .expect("Error in fetching initial sol/usd price");
         self_
     }
 
-    pub async fn deserialize_pump(&mut self, data: &mut &[u8], tx_hash: &String, log_index: usize) -> Result<Option<Trade>> {
+    pub async fn deserialize_pump(
+        &mut self,
+        data: &mut &[u8],
+        tx_hash: &String,
+        log_index: usize,
+    ) -> Result<Option<Trade>> {
         if data.len() < 8 {
             error!("discriminator too short");
         }
@@ -66,14 +80,20 @@ impl PumpProcessor {
                 let sell = self.process_sell(&sell_data, tx_hash, log_index).await?;
                 Some(sell)
             }
-            _ => None
+            _ => None,
         };
 
         Ok(trade)
     }
 
-    pub async fn process_buy(&mut self, data: &BuyEvent, tx_hash: &String, index: usize) -> Result<Trade> {
-        let amount_lamport = self.lamport_for_buy(data);
+    pub async fn process_buy(
+        &mut self,
+        data: &BuyEvent,
+        tx_hash: &String,
+        index: usize,
+    ) -> Result<Trade> {
+        let pool_info = self.pool_cache.get_pool_info(&data.pool).await?;
+        let amount_lamport = self.lamport_for_buy(data, &pool_info).await;
         let amount_usd = self.lamport_to_usd(amount_lamport).await;
         let user = data.user.to_string();
         let fees = data.lp_fee + data.coin_creator_fee + data.protocol_fee;
@@ -88,12 +108,22 @@ impl PumpProcessor {
             pool: data.pool.to_string(),
             amount_usd,
             fees,
-            fees_usd
+            fees_usd,
+            quote_token: pool_info.quote_token.to_string(),
+            base_token: pool_info.base_token.to_string(),
+            quote_amount: data.quote_amount_in,
+            base_amount: data.base_amount_out,
         })
     }
 
-    pub async fn process_sell(&mut self, data: &SellEvent, tx_hash: &String, index: usize) -> Result<Trade> {
-        let amount_lamport = self.lamport_for_sell(data);
+    pub async fn process_sell(
+        &mut self,
+        data: &SellEvent,
+        tx_hash: &String,
+        index: usize,
+    ) -> Result<Trade> {
+        let pool_info = self.pool_cache.get_pool_info(&data.pool).await?;
+        let amount_lamport = self.lamport_for_sell(data, &pool_info).await;
         let amount_usd = self.lamport_to_usd(amount_lamport).await;
         let user = data.user.to_string();
         let fees = data.lp_fee + data.coin_creator_fee + data.protocol_fee;
@@ -108,17 +138,26 @@ impl PumpProcessor {
             pool: data.pool.to_string(),
             amount_usd,
             fees,
-            fees_usd
+            fees_usd,
+            quote_token: pool_info.quote_token.to_string(),
+            base_token: pool_info.base_token.to_string(),
+            quote_amount: data.quote_amount_out,
+            base_amount: data.base_amount_in,
         })
     }
 
     pub async fn fetch_sol_price(&self) -> Result<()> {
-        let response = self.client.get(String::from(self.solana_price_url)).header("User-Agent", "bonk-sol-price-fetcher").send().await?;
+        let response = self
+            .client
+            .get(String::from(self.solana_price_url))
+            .header("User-Agent", "bonk-sol-price-fetcher")
+            .send()
+            .await?;
         let json_response: serde_json::Value = response.json().await?;
         if let Some(price) = json_response["solana"]["usd"].as_f64() {
             let mut price_guard = self.sol_price_usd.write().await;
             *price_guard = price;
-            return Ok(())
+            return Ok(());
         }
 
         Err(anyhow!("Error converting price to floating point"))
@@ -129,19 +168,19 @@ impl PumpProcessor {
         *self.sol_price_usd.read().await
     }
 
-    fn lamport_for_buy(&self, buy_event: &BuyEvent) -> u64 {
-        if buy_event.coin_creator == self.solana_program_id {
-            buy_event.base_amount_out
+    async fn lamport_for_buy(&self, event: &BuyEvent, info: &PoolInfo) -> u64 {
+        if info.quote_token == self.solana_program_id {
+            event.quote_amount_in
         } else {
-            buy_event.quote_amount_in
+            event.base_amount_out
         }
     }
 
-    fn lamport_for_sell(&self, sell_event: &SellEvent) -> u64 {
-        if sell_event.coin_creator == self.solana_program_id {
-            sell_event.base_amount_in
+    async fn lamport_for_sell(&self, event: &SellEvent, info: &PoolInfo) -> u64 {
+        if info.quote_token == self.solana_program_id {
+            event.quote_amount_out
         } else {
-            sell_event.quote_amount_out
+            event.base_amount_in
         }
     }
 

@@ -73,24 +73,23 @@ ORDER BY realized_pnl DESC;
 ```
 ### Cumulative Time series for pnl for a specific account
 ```clickhouse
-WITH trade_pnl AS (
+WITH realized_pnl AS ( -- as before
     SELECT 
         timestamp_unix,
         timestamp,
         CASE 
-            WHEN is_sell = 1 THEN amount_usd - fees_usd
-            ELSE -(amount_usd + fees_usd)
+            WHEN is_sell = 1 THEN amount_usd
+            ELSE -amount_usd
         END as trade_pnl
-    FROM trades 
+    FROM "pump_swap_data"."trades"
     WHERE user = '<SPECIFIC_WALLET_ADDRESS>'
     ORDER BY timestamp_unix
 )
 SELECT 
-    timestamp_unix,
     timestamp,
     trade_pnl,
     SUM(trade_pnl) OVER (ORDER BY timestamp_unix) as cumulative_pnl
-FROM trade_pnl
+FROM realized_pnl
 ORDER BY timestamp_unix;
 ```
 

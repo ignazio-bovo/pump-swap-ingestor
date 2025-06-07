@@ -20,7 +20,7 @@ impl BackendDb {
         Self { db_client: client }
     }
 
-    pub async fn store_trades(&self, mut rx: UnboundedReceiver<Trade>) {
+    pub async fn trade_store_service(&self, mut rx: UnboundedReceiver<Trade>) {
         while let Some(trade) = rx.recv().await {
             match self.upsert_trade(&trade).await {
                 Ok(()) => {}
