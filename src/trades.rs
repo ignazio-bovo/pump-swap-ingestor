@@ -6,6 +6,7 @@ use anchor_lang::Discriminator;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use clickhouse::Row;
+use solana_sdk::bs58;
 use solana_sdk::clock::UnixTimestamp;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
@@ -45,14 +46,15 @@ impl PumpProcessor {
             tracing::error!("discriminator too short");
         }
         let discriminator = &data[..8];
+        let data_to_deserialize = &mut &data[8..];
         let trade = match discriminator {
             BuyEvent::DISCRIMINATOR => {
-                let buy_data = BuyEvent::deserialize(data)?;
+                let buy_data = BuyEvent::deserialize(data_to_deserialize)?;
                 let buy = self.process_buy(&buy_data, tx_hash, log_index).await?;
                 Some(buy)
             }
             SellEvent::DISCRIMINATOR => {
-                let sell_data = SellEvent::deserialize(data)?;
+                let sell_data = SellEvent::deserialize(data_to_deserialize)?;
                 let sell = self.process_sell(&sell_data, tx_hash, log_index).await?;
                 Some(sell)
             }
@@ -65,11 +67,12 @@ impl PumpProcessor {
     pub async fn process_buy(&mut self, data: &BuyEvent, tx_hash: &String, index: usize) -> Result<Trade> {
         let amount_lamport = data.base_amount_out;
         let amount_usd = self.lamport_to_usd(amount_lamport).await;
+        let user = data.user.to_string();
         Ok(Trade {
             amount_lamport,
             is_sell: false,
             timestamp: UnixTimestamp::from(data.timestamp),
-            user: data.user.to_string(),
+            user,
             tx_hash: tx_hash.to_owned(),
             log_index: index,
             pool: data.pool.to_string(),
@@ -80,11 +83,12 @@ impl PumpProcessor {
     pub async fn process_sell(&mut self, data: &SellEvent, tx_hash: &String, index: usize) -> Result<Trade> {
         let amount_lamport = data.base_amount_in;
         let amount_usd = self.lamport_to_usd(amount_lamport).await;
+        let user = data.user.to_string();
         Ok(Trade {
             amount_lamport,
             is_sell: true,
             timestamp: UnixTimestamp::from(data.timestamp),
-            user: data.user.to_string(),
+            user,
             tx_hash: tx_hash.to_owned(),
             log_index: index,
             pool: data.pool.to_string(),
