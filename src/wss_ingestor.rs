@@ -1,9 +1,9 @@
-use tokio_tungstenite::{connect_async, tungstenite::Message};
-use futures_util::{SinkExt, StreamExt};
-use serde_json::json;
 use crate::trades::{PumpProcessor, Trade};
 use anyhow::Result;
+use futures_util::{SinkExt, StreamExt};
+use serde_json::json;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, info};
 
 pub struct WssIngestor {
@@ -24,7 +24,9 @@ impl WssIngestor {
     pub async fn ingest_trades(&mut self, tx: UnboundedSender<Trade>) -> Result<()> {
         info!("🚀 Connecting to {}", self.url);
 
-        let (ws_stream, _) = connect_async(&self.url).await.expect("Issue with connecting to the Solana endpoint");
+        let (ws_stream, _) = connect_async(&self.url)
+            .await
+            .expect("Issue with connecting to the Solana endpoint");
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
         // Subscribe to logs
@@ -38,7 +40,10 @@ impl WssIngestor {
             ]
         });
 
-        if let Err(e) = ws_sender.send(Message::Text(subscription.to_string())).await {
+        if let Err(e) = ws_sender
+            .send(Message::Text(subscription.to_string()))
+            .await
+        {
             error!("error with the wss connection {:?}", e.to_string());
         }
         info!("🚀 Subscribed to logs for {}", self.program_id);
@@ -82,22 +87,29 @@ impl WssIngestor {
                         for (log_index, log) in logs_array.iter().enumerate() {
                             if let Some(log_str) = log.as_str() {
                                 if log_str.starts_with("Program data: ") {
-                                    let base64_data = log_str.strip_prefix("Program data: ").unwrap().trim();
-
-                                    if let Ok(raw_data) = base64::decode(base64_data) {
-                                        let data_slice = &mut raw_data.as_slice();
-                                        if let Ok(maybe_trade) = self
-                                            .deserializer
-                                            .deserialize_pump(data_slice, &tx_hash, log_index).await
-                                        {
-                                            if let Some(trade) = maybe_trade {
-                                                if let Err(e) = tx.send(trade) {
-                                                    error!("Channel closed: {}", e);
-                                                    return Err(anyhow::anyhow!("Channel closed"));
+                                    if let Some(base64_data_untrimmed) =
+                                        log_str.strip_prefix("Program data: ")
+                                    {
+                                        let base64_data = base64_data_untrimmed.trim();
+                                        if let Ok(raw_data) = base64::decode(base64_data) {
+                                            let data_slice = &mut raw_data.as_slice();
+                                            if let Ok(maybe_trade) = self
+                                                .deserializer
+                                                .deserialize_pump(data_slice, &tx_hash, log_index)
+                                                .await
+                                            {
+                                                if let Some(trade) = maybe_trade {
+                                                    if let Err(e) = tx.send(trade) {
+                                                        error!("Channel closed: {}", e);
+                                                        return Err(anyhow::anyhow!(
+                                                            "Channel closed"
+                                                        ));
+                                                    }
                                                 }
-                                                debug!("✅ Trade sent for tx: {}", tx_hash);
                                             }
                                         }
+                                    } else {
+                                        debug!("Error parsing Program data from log payload")
                                     }
                                 }
                             }

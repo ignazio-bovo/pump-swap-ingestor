@@ -69,13 +69,11 @@ impl PumpProcessor {
         let trade = match discriminator {
             BUY_EVENT_DISCRIMINATOR  => {
                 let buy_data = BuyEvent::deserialize(data_to_deserialize)?;
-                // info!("Buy Data \n {:?}", &buy_data);
                 let buy = self.process_buy(&buy_data, tx_hash, log_index).await?;
                 Some(buy)
             }
             SELL_EVENT_DISCRIMINATOR => {
                 let sell_data = SellEvent::deserialize(data_to_deserialize)?;
-                // info!("Sell Data \n {:?}", &sell_data);
                 let sell = self.process_sell(&sell_data, tx_hash, log_index).await?;
                 Some(sell)
             }
