@@ -1,12 +1,12 @@
-use anyhow::{anyhow, Result};
 use crate::idl::Pool;
 use anchor_lang::AnchorDeserialize;
+use anyhow::{Result, anyhow};
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 use std::sync::Arc;
-use solana_sdk::pubkey::Pubkey;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::debug;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct PoolInfo {
@@ -28,7 +28,8 @@ impl PoolCache {
     }
 
     pub async fn get_pool_info(&self, pool_id: &Pubkey) -> Result<PoolInfo> {
-        { // interior mutability
+        {
+            // interior mutability
             let cache = self.data.read().await;
             if let Some(pool) = cache.get(pool_id) {
                 return Ok(pool.clone());
@@ -45,7 +46,7 @@ impl PoolCache {
             .await
             .map_err(|_| anyhow!("Pool account not found"))?;
 
-        let mut data_slice = &mut data.as_slice();
+        let data_slice = &mut data.as_slice();
         if data_slice.len() < 8 {
             return Err(anyhow!("Error with the pool fetching"));
         }
@@ -64,7 +65,7 @@ impl PoolCache {
             cache.insert(*id, pool_info.clone());
         }
 
-        info!("Pool added to cache {:?}", id);
+        debug!("Pool added to cache {:?}", id);
         Ok(pool_info)
     }
 }

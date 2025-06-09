@@ -21,15 +21,15 @@ services:
       timeout: 10s
       retries: 3
 
-  pump-ingestor:
-    build: .
-    depends_on:
-      clickhouse:
-        condition: service_healthy
-    environment:
-      - CLICKHOUSE_URL=http://clickhouse:8123
-      - RUST_BACKTRACE=1
-    restart: unless-stopped
+#  pump-ingestor:
+#    build: .
+#    depends_on:
+#      clickhouse:
+#        condition: service_healthy
+#    environment:
+#      - CLICKHOUSE_URL=http://clickhouse:8123
+#      - RUST_BACKTRACE=1
+#    restart: unless-stopped
 
 volumes:
   clickhouse_data:

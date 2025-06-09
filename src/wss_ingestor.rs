@@ -4,7 +4,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 pub struct WssIngestor {
     url: String,
@@ -86,6 +86,7 @@ impl WssIngestor {
                     if let Some(logs_array) = logs.as_array() {
                         for (log_index, log) in logs_array.iter().enumerate() {
                             if let Some(log_str) = log.as_str() {
+                                // info!("Error parsing Program data from log payload {:?}", log_str);
                                 if log_str.starts_with("Program data: ") {
                                     if let Some(base64_data_untrimmed) =
                                         log_str.strip_prefix("Program data: ")
@@ -109,7 +110,7 @@ impl WssIngestor {
                                             }
                                         }
                                     } else {
-                                        debug!("Error parsing Program data from log payload")
+                                        error!("Error parsing Program data from log payload {:?}", log_str);
                                     }
                                 }
                             }
