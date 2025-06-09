@@ -101,3 +101,9 @@ SELECT
 FROM realized_pnl
 ORDER BY timestamp_unix;
 ```
+## Improvements
+### Immediate
+- Implement an internal in memory retry queue for failed trade upsertion on db (for example in case Clickhouse is temporarely down)
+- Wss should also have a retry logic in case of failed pushes, keeping track of the latest block processed is necessary in order to avoid gaps
+- In case of high load parallel event processing can be implemented by spawning multiple tokio tasks to process trades concurrently while maintaining order
+    using channels or async queues
