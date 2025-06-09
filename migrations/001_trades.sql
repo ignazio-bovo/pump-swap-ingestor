@@ -16,6 +16,6 @@ CREATE TABLE IF NOT EXISTS trades
     quote_amount   UInt64,
     base_amount    UInt64
 ) ENGINE = ReplacingMergeTree()
-      ORDER BY (tx_hash, log_index)
-      PARTITION BY toYYYYMM(timestamp)
+      ORDER BY (user, tx_hash, log_index)
+      PARTITION BY (ascii(substring(user, -1, 1)) % 10)
       SETTINGS index_granularity = 8192;

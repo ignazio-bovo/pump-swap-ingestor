@@ -39,16 +39,30 @@ impl BackendDb {
         Ok(())
     }
 
+    pub async fn needs_migration(&self) -> Result<bool> {
+        let query = "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'trades'";
+
+        let result: u64 = self.db_client
+            .query(query)
+            .fetch_one()
+            .await?;
+
+        Ok(result == 0)
+    }
+
     pub async fn run_migrations(&self) {
         let migration_sql =
             fs::read_to_string("migrations/001_trades.sql").expect("Migration file not found");
 
-        self.db_client
-            .query(&migration_sql)
-            .execute()
-            .await
-            .expect("Migration setup is necessary for correct setup");
+        let needs_migrations = self.needs_migration().await.expect("Cannot establish whether migrations are needed");
+        if needs_migrations {
+            self.db_client
+                .query(&migration_sql)
+                .execute()
+                .await
+                .expect("Migration setup is necessary for correct setup");
 
-        info!("Migration completed successfully");
+            info!("Migration completed successfully");
+        }
     }
 }
